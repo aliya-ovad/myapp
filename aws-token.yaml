@@ -1,0 +1,92 @@
+apiVersion: v1
+kind: Secret
+metadata:
+  name: secret-cj
+  namespace: myapp
+stringData:
+  AAWS_SECRET_ACCESS_KEY: "SECRET_ACCESS_KEY"
+  AWS_ACCESS_KEY_ID: "ACCESS_KEY_ID"
+  AWS_ACCOUNT: "ACCOUNT_ID"
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: configmap-cj
+  namespace: myapp
+data:
+  AWS_REGION: "REGION"
+  DOCKER_SECRET_NAME: secret-cj
+---
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: cj-app
+  namespace: myapp
+spec:
+  schedule: "* */10 * * *"
+  successfulJobsHistoryLimit: 3
+  suspend: false
+  jobTemplate:
+    spec:
+      template:
+        spec:
+          serviceAccountName: sa-cj
+          containers:
+          - name: app-token
+            image: odaniait/aws-kubectl:latest
+            imagePullPolicy: IfNotPresent
+            envFrom:
+              - secretRef:
+                  name: secret-cj
+              - configMapRef:
+                  name: configmap-cj
+            command:
+              - /bin/sh
+              - -c
+              - |-
+                ECR_TOKEN=`aws ecr get-login-password --region eu-central-1`
+                NAMESPACE_NAME=myapp
+                kubectl delete secret --ignore-not-found secret-app -n myapp
+                kubectl create secret docker-registry secret-app \
+                --docker-server=https://"ID ACCOUNT".dkr.ecr."REGION".amazonaws.com \
+                --docker-username=AWS \
+                --docker-password="${ECR_TOKEN}" \
+                --namespace=myapp
+                echo "Secret was successfully updated at $(date)"
+          restartPolicy: Never
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: sa-cj
+  namespace: myapp
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  namespace: myapp
+  name: role-cj
+rules:
+- apiGroups: [""]
+  resources: ["secrets"]
+  resourceNames: ["regcred"]
+  verbs: ["delete"]
+- apiGroups: [""]
+  resources: ["secrets"]
+  verbs: ["create"]
+---
+kind: RoleBinding
+apiVersion: rbac.authorization.k8s.io/v1
+metadata:
+  name: rb-cj
+  namespace: myapp
+subjects:
+- kind: ServiceAccount
+  name: sa-cj
+  namespace: myapp
+  apiGroup: ""
+roleRef:
+  kind: Role
+  name: role-cj
+  apiGroup: ""
+---
