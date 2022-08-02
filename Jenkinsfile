@@ -4,7 +4,7 @@ pipeline {
     stages {
         stage('build') {
             steps {
-               sh 'docker rmi python2/app'
+             
 	       sh 'docker build -t python2/app .'
    	       sh 'docker images' 
             }
